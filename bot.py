@@ -1,13 +1,10 @@
 import telegram
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import json
-import serpapi  # Новый импорт для serpapi
+from googlesearch import search  # Новая библиотека для поиска
 
 # Токен от @BotFather
 TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
-
-# Ключ API от SerpApi (замени на свой!)
-SERPAPI_KEY = "a1b2c3d4e5f6g7h8i9j0"
 
 # Название файла для хранения данных
 DATA_FILE = "bot_data.json"
@@ -22,22 +19,19 @@ def load_data():
 
 # Функция для сохранения данных в файл
 def save_data(data):
-    with open(DATA_FILE, "w") as file:
-        json.dump(data, file, indent=4)
+    try:
+        with open(DATA_FILE, "w") as file:
+            json.dump(data, file, indent=4)
+    except Exception as e:
+        print(f"Ошибка сохранения данных: {e}")
 
-# Функция для поиска ответа в интернете через SerpApi
+# Функция для поиска ответа в интернете через googlesearch-python
 def search_online(query):
     try:
-        params = {
-            "q": query,  # Запрос
-            "api_key": SERPAPI_KEY,  # Твой ключ API
-            "num": 1  # Ограничим одним результатом
-        }
-        results = serpapi.search(params)  # Новый способ вызова поиска
-        
-        # Проверяем, есть ли органические результаты
-        if "organic_results" in results and len(results["organic_results"]) > 0:
-            return results["organic_results"][0].get("snippet", "Нет краткого ответа.")
+        # Получаем первый результат поиска
+        results = list(search(query, num_results=1, lang="ru"))
+        if results:
+            return results[0]  # Возвращаем URL или описание
         return "К сожалению, я не нашёл ответа. Попробуй другой вопрос!"
     except Exception as e:
         return f"Ошибка при поиске: {str(e)}. Попробуй ещё раз!"
@@ -62,11 +56,13 @@ def handle_message(update, context):
     user_message = update.message.text.lower()
     data = load_data()
 
+    # Проверяем историю
     for entry in data["history"]:
         if entry["question"] == user_message:
             update.message.reply_text(f"Я уже знаю ответ: {entry['answer']}")
             return
 
+    # Ищем новый ответ
     answer = search_online(user_message)
     data["history"].append({"question": user_message, "answer": answer})
     save_data(data)
