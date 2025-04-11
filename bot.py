@@ -1,10 +1,13 @@
 import telegram
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import json
-from duckduckgo_search import DDG  # Исправленный импорт
+from serpapi import GoogleSearch  # Новая библиотека для поиска
 
 # Токен от @BotFather
 TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
+
+# Ключ API от SerpApi (замени на свой!)
+SERPAPI_KEY = "a1b2c3d4e5f6g7h8i9j0"
 
 # Название файла для хранения данных
 DATA_FILE = "bot_data.json"
@@ -22,16 +25,23 @@ def save_data(data):
     with open(DATA_FILE, "w") as file:
         json.dump(data, file, indent=4)
 
-# Функция для поиска ответа в интернете через DuckDuckGo
+# Функция для поиска ответа в интернете через SerpApi
 def search_online(query):
     try:
-        ddg = DDG()
-        results = ddg.text(query, max_results=1)
-        if results:
-            return results[0]["body"]
+        params = {
+            "q": query,  # Запрос
+            "api_key": SERPAPI_KEY,  # Твой ключ API
+            "num": 1  # Ограничим одним результатом
+        }
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        
+        # Проверяем, есть ли органические результаты
+        if "organic_results" in results and len(results["organic_results"]) > 0:
+            return results["organic_results"][0].get("snippet", "Нет краткого ответа.")
         return "К сожалению, я не нашёл ответа. Попробуй другой вопрос!"
-    except Exception:
-        return "Ошибка при поиске. Попробуй ещё раз!"
+    except Exception as e:
+        return f"Ошибка при поиске: {str(e)}. Попробуй ещё раз!"
 
 # Команда /start
 def start(update, context):
