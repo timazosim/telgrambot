@@ -1,7 +1,7 @@
 import telegram
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import json
-from duckduckgo_search import DDG
+from python-telegram-bot import DDG
 
 # Токен от @BotFather 
 TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
