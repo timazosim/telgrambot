@@ -1,7 +1,7 @@
 import telegram
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import json
-from serpapi import GoogleSearch  # Новая библиотека для поиска
+import serpapi  # Новый импорт для serpapi
 
 # Токен от @BotFather
 TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
@@ -33,8 +33,7 @@ def search_online(query):
             "api_key": SERPAPI_KEY,  # Твой ключ API
             "num": 1  # Ограничим одним результатом
         }
-        search = GoogleSearch(params)
-        results = search.get_dict()
+        results = serpapi.search(params)  # Новый способ вызова поиска
         
         # Проверяем, есть ли органические результаты
         if "organic_results" in results and len(results["organic_results"]) > 0:
