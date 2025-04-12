@@ -15,9 +15,6 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
-if TOKEN is None:
-    logger.error "TELEGRAM_TOKEN не найден в переменных окружения!"
-    raise ValueError "TELEGRAM_TOKEN не установлен"
 DATA_FILE = "bot_data.json"
 
 # Rate limiting configuration
