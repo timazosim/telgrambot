@@ -1,82 +1,192 @@
-import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+import os
 import json
-from googlesearch import search  # Новая библиотека для поиска
+import time
+from datetime import datetime
+from dotenv import load_dotenv
+from telegram import Update, ParseMode
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from transformers import pipeline
+from googlesearch import search
+import logging
 
-# Токен от @BotFather
-TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
+# Set up logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Название файла для хранения данных
+# Load environment variables
+load_dotenv()
+TOKEN = os.getenv ("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
 DATA_FILE = "bot_data.json"
 
-# Функция для загрузки данных из файла
+# Initialize transformer model (distilgpt2 for lightweight performance)
+generator = pipeline("text-generation", model="distilgpt2")
+
+# Rate limiting configuration
+RATE_LIMIT = 10  # Max messages per minute per user
+user_timestamps = {}
+
+# Load conversation data
 def load_data():
     try:
         with open(DATA_FILE, "r") as file:
             return json.load(file)
     except FileNotFoundError:
-        return {"history": []}
+        return {"users": {}}
+    except Exception as e:
+        logger.error(f"Error loading data: {e}")
+        return {"users": {}}
 
-# Функция для сохранения данных в файл
+# Save conversation data
 def save_data(data):
     try:
         with open(DATA_FILE, "w") as file:
             json.dump(data, file, indent=4)
     except Exception as e:
-        print(f"Ошибка сохранения данных: {e}")
+        logger.error(f"Error saving data: {e}")
 
-# Функция для поиска ответа в интернете через googlesearch-python
+# Check rate limit
+def check_rate_limit(user_id):
+    now = time.time()
+    if user_id not in user_timestamps:
+        user_timestamps[user_id] = []
+    user_timestamps[user_id] = [t for t in user_timestamps[user_id] if now - t < 60]
+    if len(user_timestamps[user_id]) >= RATE_LIMIT:
+        return False
+    user_timestamps[user_id].append(now)
+    return True
+
+# Search online with fallback
 def search_online(query):
     try:
-        # Получаем первый результат поиска
-        results = list(search(query, num_results=1, lang="ru"))
+        results = list(search(query, num_results=3, lang="ru"))
         if results:
-            return results[0]  # Возвращаем URL или описание
-        return "К сожалению, я не нашёл ответа. Попробуй другой вопрос!"
+            return f"Вот что я нашёл: {results[0]}"
+        return None
     except Exception as e:
-        return f"Ошибка при поиске: {str(e)}. Попробуй ещё раз!"
+        logger.error(f"Search error: {e}")
+        return None
 
-# Команда /start
-def start(update, context):
-    update.message.reply_text("Привет! Я твой умный бот. Задавай вопросы, я найду ответы и запомню их!")
+# Generate response using transformer model
+def generate_response(prompt, context=""):
+    try:
+        input_text = f"{context}\nUser: {prompt}\nBot: "
+        response = generator(input_text, max_length=150, num_return_sequences=1, truncation=True)[0]['generated_text']
+        # Extract only the bot's response
+        bot_response = response.split("Bot: ")[-1].strip()
+        return bot_response
+    except Exception as e:
+        logger.error(f"Generation error: {e}")
+        return "Извини, что-то пошло не так. Попробуй ещё раз!"
 
-# Команда /history
-def history(update, context):
+# Command: /start
+def start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    update.message.reply_text(
+        f"Привет, {user.first_name}! Я твой умный бот, готовый ответить на любые вопросы. "
+        "Задавай вопрос, и я найду ответ или придумаю что-то умное! 😄\n"
+        "Команды: /start, /history, /clear"
+    )
+
+# Command: /history
+def history(update: Update, context: CallbackContext):
+    user_id = str(update.effective_user.id)
     data = load_data()
-    if not data["history"]:
-        update.message.reply_text("История пуста!")
+    
+    if user_id not in data["users"] or not data["users"][user_id]:
+        update.message.reply_text("История пуста! Задай мне вопрос, чтобы начать.")
         return
-    response = "Вот твои вопросы и ответы:\n"
-    for entry in data["history"]:
-        response += f"Вопрос: {entry['question']}\nОтвет: {entry['answer']}\n\n"
-    update.message.reply_text(response)
+    
+    response = "*Твоя история вопросов:*\n"
+    for entry in data["users"][user_id][-5:]:  # Show last 5 entries
+        timestamp = entry.get("timestamp", "Неизвестно")
+        question = entry["question"]
+        answer = entry["answer"]
+        response += f"_{timestamp}_\n*Вопрос:* {question}\n*Ответ:* {answer}\n\n"
+    
+    update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
-# Обработка текстовых сообщений
-def handle_message(update, context):
-    user_message = update.message.text.lower()
+# Command: /clear
+def clear(update: Update, context: CallbackContext):
+    user_id = str(update.effective_user.id)
     data = load_data()
+    
+    if user_id in data["users"]:
+        data["users"][user_id] = []
+        save_data(data)
+        update.message.reply_text("История очищена!")
+    else:
+        update.message.reply_text("У тебя пока нет истории для очистки.")
 
-    # Проверяем историю
-    for entry in data["history"]:
-        if entry["question"] == user_message:
-            update.message.reply_text(f"Я уже знаю ответ: {entry['answer']}")
+# Handle text messages
+def handle_message(update: Update, context: CallbackContext):
+    user_id = str(update.effective_user.id)
+    user_message = update.message.text.strip()
+    
+    # Rate limit check
+    if not check_rate_limit(user_id):
+        update.message.reply_text("Слишком много сообщений! Подожди минутку.")
+        return
+    
+    data = load_data()
+    if user_id not in data["users"]:
+        data["users"][user_id] = []
+    
+    # Load recent conversation context (last 3 messages)
+    context = ""
+    for entry in data["users"][user_id][-3:]:
+        context += f"User: {entry['question']}\nBot: {entry['answer']}\n"
+    
+    # Try to find answer in history
+    for entry in data["users"][user_id]:
+        if entry["question"].lower() == user_message.lower():
+            update.message.reply_text(f"Я уже отвечал: {entry['answer']}")
             return
-
-    # Ищем новый ответ
+    
+    # Try online search
     answer = search_online(user_message)
-    data["history"].append({"question": user_message, "answer": answer})
+    
+    # Fallback to transformer model if search fails
+    if not answer:
+        answer = generate_response(user_message, context)
+    
+    # Save to history
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    data["users"][user_id].append({
+        "question": user_message,
+        "answer": answer,
+        "timestamp": timestamp
+    })
     save_data(data)
-    update.message.reply_text(answer)
+    
+    # Send response
+    update.message.reply_text(answer, parse_mode=ParseMode.MARKDOWN)
 
-# Главная функция
+# Error handler
+def error_handler(update: Update, context: CallbackContext):
+    logger.error(f"Update {update} caused error {context.error}")
+    if update:
+        update.message.reply_text("Ой, что-то сломалось! Попробуй снова.")
+
+# Main function
 def main():
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
+    
+    # Commands
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("history", history))
+    dp.add_handler(CommandHandler("clear", clear))
+    
+    # Messages
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    
+    # Error handling
+    dp.add_error_handler(error_handler)
+    
+    # Start bot
+    logger.info("Bot started")
     updater.start_polling()
     updater.idle()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
