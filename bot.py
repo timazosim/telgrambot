@@ -5,7 +5,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, ParseMode
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from googlesearch import search
+import requests
 import logging
 
 # Set up logging
@@ -14,15 +14,19 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
-TOKEN = os.getenv ("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
+TOKEN = os.getenv("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
 DATA_FILE = "bot_data.json"
-
-# Initialize transformer model (distilgpt2 for lightweight performance)
-generator = pipeline("text-generation", model="distilgpt2")
 
 # Rate limiting configuration
 RATE_LIMIT = 10  # Max messages per minute per user
 user_timestamps = {}
+
+# Predefined fallback responses
+FALLBACK_RESPONSES = [
+    "Хм, это интересный вопрос! Дай мне секунду подумать... 😊",
+    "К сожалению, у меня нет точного ответа, но я могу предложить поискать это вместе!",
+    "Ого, ты меня озадачил! Может, переформулируем вопрос?",
+]
 
 # Load conversation data
 def load_data():
@@ -32,7 +36,7 @@ def load_data():
     except FileNotFoundError:
         return {"users": {}}
     except Exception as e:
-        logger.error(f"Error loading data: {e}")
+        logger.error(f"Ошибка загрузки данных: {e}")
         return {"users": {}}
 
 # Save conversation data
@@ -41,7 +45,7 @@ def save_data(data):
         with open(DATA_FILE, "w") as file:
             json.dump(data, file, indent=4)
     except Exception as e:
-        logger.error(f"Error saving data: {e}")
+        logger.error(f"Ошибка сохранения данных: {e}")
 
 # Check rate limit
 def check_rate_limit(user_id):
@@ -54,35 +58,33 @@ def check_rate_limit(user_id):
     user_timestamps[user_id].append(now)
     return True
 
-# Search online with fallback
+# Search online using DuckDuckGo API
 def search_online(query):
     try:
-        results = list(search(query, num_results=3, lang="ru"))
-        if results:
-            return f"Вот что я нашёл: {results[0]}"
+        url = "https://api.duckduckgo.com/"
+        params = {"q": query, "format": "json", "t": "telegram_bot"}
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("Abstract"):
+            return data["Abstract"]
+        elif data.get("RelatedTopics"):
+            return data["RelatedTopics"][0].get("Text", "Ничего не нашёл.")
         return None
     except Exception as e:
-        logger.error(f"Search error: {e}")
+        logger.error(f"Ошибка поиска: {e}")
         return None
 
-# Generate response using transformer model
-def generate_response(prompt, context=""):
-    try:
-        input_text = f"{context}\nUser: {prompt}\nBot: "
-        response = generator(input_text, max_length=150, num_return_sequences=1, truncation=True)[0]['generated_text']
-        # Extract only the bot's response
-        bot_response = response.split("Bot: ")[-1].strip()
-        return bot_response
-    except Exception as e:
-        logger.error(f"Generation error: {e}")
-        return "Извини, что-то пошло не так. Попробуй ещё раз!"
+# Generate a fallback response
+def get_fallback_response():
+    from random import choice
+    return choice(FALLBACK_RESPONSES)
 
 # Command: /start
 def start(update: Update, context: CallbackContext):
     user = update.effective_user
     update.message.reply_text(
-        f"Привет, {user.first_name}! Я твой умный бот, готовый ответить на любые вопросы. "
-        "Задавай вопрос, и я найду ответ или придумаю что-то умное! 😄\n"
+        f"Привет, {user.first_name}! Я твой умный бот. Задавай вопросы, я попробую ответить или найти ответ! 😄\n"
         "Команды: /start, /history, /clear"
     )
 
@@ -130,12 +132,7 @@ def handle_message(update: Update, context: CallbackContext):
     if user_id not in data["users"]:
         data["users"][user_id] = []
     
-    # Load recent conversation context (last 3 messages)
-    context = ""
-    for entry in data["users"][user_id][-3:]:
-        context += f"User: {entry['question']}\nBot: {entry['answer']}\n"
-    
-    # Try to find answer in history
+    # Check history
     for entry in data["users"][user_id]:
         if entry["question"].lower() == user_message.lower():
             update.message.reply_text(f"Я уже отвечал: {entry['answer']}")
@@ -144,9 +141,9 @@ def handle_message(update: Update, context: CallbackContext):
     # Try online search
     answer = search_online(user_message)
     
-    # Fallback to transformer model if search fails
+    # Fallback to predefined response if search fails
     if not answer:
-        answer = generate_response(user_message, context)
+        answer = get_fallback_response()
     
     # Save to history
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -183,7 +180,7 @@ def main():
     dp.add_error_handler(error_handler)
     
     # Start bot
-    logger.info("Bot started")
+    logger.info("Бот запущен")
     updater.start_polling()
     updater.idle()
 
