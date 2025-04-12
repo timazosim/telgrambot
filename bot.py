@@ -8,46 +8,52 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Callb
 import requests
 import logging
 
-# Set up logging
+# Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
+# Загрузка токена
 load_dotenv()
 TOKEN = os.getenv("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
-DATA_FILE = "bot_data.json"
 
-# Rate limiting configuration
-RATE_LIMIT = 10  # Max messages per minute per user
+# Проверка токена
+if not TOKEN:
+    logger.error("TELEGRAM_TOKEN не найден в переменных окружения! Убедитесь, что файл .env существует и содержит TELEGRAM_TOKEN.")
+    raise ValueError("TELEGRAM_TOKEN не установлен")
+
+# Конфигурация
+DATA_FILE = "bot_data.json"
+RATE_LIMIT = 10  # Максимум сообщений в минуту на пользователя
 user_timestamps = {}
 
-# Predefined fallback responses
+# Предустановленные ответы для случаев, когда поиск не дал результатов
 FALLBACK_RESPONSES = [
-    "Хм, это интересный вопрос! Дай мне секунду подумать... 😊",
-    "К сожалению, у меня нет точного ответа, но я могу предложить поискать это вместе!",
-    "Ого, ты меня озадачил! Может, переформулируем вопрос?",
+    "Хм, интересный вопрос! Не нашёл точного ответа, но давай попробуем переформулировать? 😊",
+    "Кажется, это загадка! Может, уточнишь детали?",
+    "Ого, ты меня озадачил! Давай попробуем ещё раз!",
 ]
 
-# Load conversation data
+# Загрузка данных
 def load_data():
     try:
-        with open(DATA_FILE, "r") as file:
+        with open(DATA_FILE, "r", encoding="utf-8") as file:
             return json.load(file)
     except FileNotFoundError:
+        logger.info("Файл данных не найден, создаём новый.")
         return {"users": {}}
     except Exception as e:
         logger.error(f"Ошибка загрузки данных: {e}")
         return {"users": {}}
 
-# Save conversation data
+# Сохранение данных
 def save_data(data):
     try:
-        with open(DATA_FILE, "w") as file:
-            json.dump(data, file, indent=4)
+        with open(DATA_FILE, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4, ensure_ascii=False)
     except Exception as e:
         logger.error(f"Ошибка сохранения данных: {e}")
 
-# Check rate limit
+# Проверка лимита сообщений
 def check_rate_limit(user_id):
     now = time.time()
     if user_id not in user_timestamps:
@@ -58,7 +64,7 @@ def check_rate_limit(user_id):
     user_timestamps[user_id].append(now)
     return True
 
-# Search online using DuckDuckGo API
+# Поиск с использованием DuckDuckGo API
 def search_online(query):
     try:
         url = "https://api.duckduckgo.com/"
@@ -75,30 +81,31 @@ def search_online(query):
         logger.error(f"Ошибка поиска: {e}")
         return None
 
-# Generate a fallback response
+# Получение предустановленного ответа
 def get_fallback_response():
     from random import choice
     return choice(FALLBACK_RESPONSES)
 
-# Command: /start
+# Команда /start
 def start(update: Update, context: CallbackContext):
     user = update.effective_user
     update.message.reply_text(
-        f"Привет, {user.first_name}! Я твой умный бот. Задавай вопросы, я попробую ответить или найти ответ! 😄\n"
-        "Команды: /start, /history, /clear"
+        f"Привет, {user.first_name}! Я твой умный бот. Задавай вопросы, я постараюсь ответить! 😄\n"
+        "Команды: /start, /history, /clear",
+        parse_mode=ParseMode.MARKDOWN
     )
 
-# Command: /history
+# Команда /history
 def history(update: Update, context: CallbackContext):
     user_id = str(update.effective_user.id)
     data = load_data()
     
     if user_id not in data["users"] or not data["users"][user_id]:
-        update.message.reply_text("История пуста! Задай мне вопрос, чтобы начать.")
+        update.message.reply_text("История пуста! Задай мне вопрос, чтобы начать.", parse_mode=ParseMode.MARKDOWN)
         return
     
     response = "*Твоя история вопросов:*\n"
-    for entry in data["users"][user_id][-5:]:  # Show last 5 entries
+    for entry in data["users"][user_id][-5:]:  # Показываем последние 5 записей
         timestamp = entry.get("timestamp", "Неизвестно")
         question = entry["question"]
         answer = entry["answer"]
@@ -106,7 +113,7 @@ def history(update: Update, context: CallbackContext):
     
     update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
 
-# Command: /clear
+# Команда /clear
 def clear(update: Update, context: CallbackContext):
     user_id = str(update.effective_user.id)
     data = load_data()
@@ -114,38 +121,38 @@ def clear(update: Update, context: CallbackContext):
     if user_id in data["users"]:
         data["users"][user_id] = []
         save_data(data)
-        update.message.reply_text("История очищена!")
+        update.message.reply_text("История очищена!", parse_mode=ParseMode.MARKDOWN)
     else:
-        update.message.reply_text("У тебя пока нет истории для очистки.")
+        update.message.reply_text("У тебя пока нет истории для очистки.", parse_mode=ParseMode.MARKDOWN)
 
-# Handle text messages
+# Обработка текстовых сообщений
 def handle_message(update: Update, context: CallbackContext):
     user_id = str(update.effective_user.id)
     user_message = update.message.text.strip()
     
-    # Rate limit check
+    # Проверка лимита сообщений
     if not check_rate_limit(user_id):
-        update.message.reply_text("Слишком много сообщений! Подожди минутку.")
+        update.message.reply_text("Слишком много сообщений! Подожди минутку.", parse_mode=ParseMode.MARKDOWN)
         return
     
     data = load_data()
     if user_id not in data["users"]:
         data["users"][user_id] = []
     
-    # Check history
+    # Проверка истории
     for entry in data["users"][user_id]:
         if entry["question"].lower() == user_message.lower():
-            update.message.reply_text(f"Я уже отвечал: {entry['answer']}")
+            update.message.reply_text(f"Я уже отвечал: {entry['answer']}", parse_mode=ParseMode.MARKDOWN)
             return
     
-    # Try online search
+    # Поиск ответа
     answer = search_online(user_message)
     
-    # Fallback to predefined response if search fails
+    # Использование предустановленного ответа, если поиск не удался
     if not answer:
         answer = get_fallback_response()
     
-    # Save to history
+    # Сохранение в историю
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     data["users"][user_id].append({
         "question": user_message,
@@ -154,35 +161,40 @@ def handle_message(update: Update, context: CallbackContext):
     })
     save_data(data)
     
-    # Send response
+    # Отправка ответа
     update.message.reply_text(answer, parse_mode=ParseMode.MARKDOWN)
 
-# Error handler
+# Обработчик ошибок
 def error_handler(update: Update, context: CallbackContext):
-    logger.error(f"Update {update} caused error {context.error}")
-    if update:
-        update.message.reply_text("Ой, что-то сломалось! Попробуй снова.")
+    logger.error(f"Ошибка при обработке обновления {update}: {context.error}")
+    if update and update.message:
+        update.message.reply_text("Ой, что-то пошло не так! Попробуй снова.", parse_mode=ParseMode.MARKDOWN)
 
-# Main function
+# Основная функция
 def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-    
-    # Commands
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("history", history))
-    dp.add_handler(CommandHandler("clear", clear))
-    
-    # Messages
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-    
-    # Error handling
-    dp.add_error_handler(error_handler)
-    
-    # Start bot
-    logger.info("Бот запущен")
-    updater.start_polling()
-    updater.idle()
+    try:
+        logger.info("Запуск бота...")
+        updater = Updater(TOKEN, use_context=True)
+        dp = updater.dispatcher
+        
+        # Команды
+        dp.add_handler(CommandHandler("start", start))
+        dp.add_handler(CommandHandler("history", history))
+        dp.add_handler(CommandHandler("clear", clear))
+        
+        # Обработка сообщений
+        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+        
+        # Обработчик ошибок
+        dp.add_error_handler(error_handler)
+        
+        # Запуск бота
+        logger.info("Бот успешно запущен")
+        updater.start_polling()
+        updater.idle()
+    except Exception as e:
+        logger.error(f"Критическая ошибка при запуске бота: {e}")
+        raise
 
 if __name__ == "__main__":
     main()
