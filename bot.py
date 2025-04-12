@@ -5,7 +5,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, ParseMode
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from transformers import pipeline
 from googlesearch import search
 import logging
 
