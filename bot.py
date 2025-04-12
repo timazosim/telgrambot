@@ -2,7 +2,6 @@ import os
 import json
 import time
 from datetime import datetime
-from dotenv import load_dotenv
 from telegram import Update, ParseMode
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 import requests
@@ -13,8 +12,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Загрузка токена
-load_dotenv()
-TOKEN = os.getenv("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
+TOKEN = ("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
 
 # Проверка токена
 if not TOKEN:
