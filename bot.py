@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+pdater = Updater(TOKEN, use_context=True)
 TOKEN = os.getenv("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
 DATA_FILE = "bot_data.json"
 
