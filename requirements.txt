@@ -1,5 +1,4 @@
 python-telegram-bot==13.7
 transformers==4.38.2
 googlesearch-python==1.2.0
-torch==2.2.1
 python-dotenv==1.0.1
