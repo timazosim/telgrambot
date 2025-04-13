@@ -11,7 +11,6 @@ from textblob import TextBlob
 from pyowm import OWM
 import wikipediaapi
 import pyjokes
-from randomfacts import RandomFacts
 import emoji
 import nltk
 import logging
@@ -50,9 +49,6 @@ FALLBACK_RESPONSES = [
 
 # Настройка Википедии
 wiki = wikipediaapi.Wikipedia("ru")
-
-# Настройка RandomFacts
-facts = RandomFacts()
 
 # Настройка NLTK
 nltk.download('punkt', quiet=True)
