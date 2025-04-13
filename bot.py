@@ -4,42 +4,56 @@ import time
 import random
 from datetime import datetime
 from telegram import Update, ParseMode
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Updater, MessageHandler, Filters, CallbackContext
 import requests
 from bs4 import BeautifulSoup
 from textblob import TextBlob
 from pyowm import OWM
 import wikipediaapi
 import pyjokes
+from randomfacts import RandomFacts
 import emoji
 import nltk
 import logging
+import re
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Загрузка токена
-TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
-    logger.error("Токен не задан! Установите TELEGRAM_TOKEN в переменных окружения.")
+    TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"  # Временный токен
+    logger.warning("TELEGRAM_TOKEN не найден в переменных окружения. Используется токен из кода (небезопасно).")
+
+if not TOKEN:
+    logger.error("Токен не задан! Установите TELEGRAM_TOKEN в переменных окружения или укажите в коде.")
+    raise ValueError("Токен не установлен.")
 
 # Ключ для OpenWeatherMap
-OWM_API_KEY = "your_openweathermap_key_here"  # Замените на ваш ключ с openweathermap.org
+OWM_API_KEY = "your_openweathermap_key_here"  # Замените на ваш ключ
 owm = OWM(OWM_API_KEY) if OWM_API_KEY != "your_openweathermap_key_here" else None
 
 # Конфигурация
 DATA_FILE = "bot_data.json"
-RATE_LIMIT = 10  # Максимум сообщений в минуту на пользователя
+RATE_LIMIT = 10
 user_timestamps = {}
 
 # Предустановленные ответы
 FALLBACK_RESPONSES = [
-    "Ого, интересный вопрос! Давай попробуем найти ответ? 😊",
+    "Ого, интересный запрос! Давай попробуем найти ответ? 😊",
     "Хм, ты меня озадачил! Может, уточнишь? 🤔",
     "Не уверен, но могу рассказать факт или шутку! 😄",
     "Кажется, мой интернет-радар спит! Попробуем ещё раз? 🚀",
 ]
+
+# Настройка Википедии
+wiki = wikipediaapi.Wikipedia("ru")
+
+# Настройка RandomFacts
+facts = RandomFacts()
+
 # Настройка NLTK
 nltk.download('punkt', quiet=True)
 nltk.download('vader_lexicon', quiet=True)
@@ -75,7 +89,7 @@ def check_rate_limit(user_id):
     user_timestamps[user_id].append(now)
     return True
 
-# Веб-парсинг для поиска
+# Веб-парсинг
 def search_web(query):
     try:
         url = f"https://www.qwant.com/?q={query}&t=web"
@@ -85,7 +99,7 @@ def search_web(query):
         soup = BeautifulSoup(response.text, "html.parser")
         results = soup.find_all("div", class_="result__body")
         if results:
-            return results[0].get_text(strip=True)[:200]  # Первые 200 символов
+            return results[0].get_text(strip=True)[:200]
         return None
     except Exception as e:
         logger.error(f"Ошибка веб-поиска: {e}")
@@ -96,7 +110,7 @@ def search_wikipedia(query):
     try:
         page = wiki.page(query)
         if page.exists():
-            return page.summary[:200]  # Первые 200 символов
+            return page.summary[:200]
         return None
     except Exception as e:
         logger.error(f"Ошибка Википедии: {e}")
@@ -157,6 +171,7 @@ def get_fact():
         logger.error(f"Ошибка факта: {e}")
         return "Интересный факт: Земля круглая! 🌍"
 
+# Извлечение ключевых слов
 def extract_keywords(text):
     try:
         tokens = nltk.word_tokenize(text.lower())
@@ -165,85 +180,40 @@ def extract_keywords(text):
         logger.error(f"Ошибка извлечения ключевых слов: {e}")
         return [text.lower()]
 
-# Команда /start
-def start(update: Update, context: CallbackContext):
-    user = update.effective_user
-    update.message.reply_text(
-        emoji.emojize(
-            f"Привет, {user.first_name}! Я супер-бот! :robot:\n"
-            "Могу искать в интернете, показывать погоду, шутить, находить факты и анализировать настроение.\n"
-            "Команды:\n"
-            "/start - Приветствие\n"
-            "/weather <город> - Погода\n"
-            "/joke - Шутка\n"
-            "/fact - Случайный факт\n"
-            "/history - История вопросов\n"
-            "/clear - Очистить историю\n"
-            "Просто задай вопрос, и я найду ответ! :mag:"
-        ),
-        parse_mode=ParseMode.MARKDOWN
-    )
-
-# Команда /weather
-def weather(update: Update, context: CallbackContext):
-    user_id = str(update.effective_user.id)
-    if not check_rate_limit(user_id):
-        update.message.reply_text(emoji.emojize("Слишком много сообщений! Подожди минутку. :hourglass:"), parse_mode=ParseMode.MARKDOWN)
-        return
+# Классификация намерения
+def classify_intent(text):
+    text_lower = text.lower()
     
-    city = " ".join(context.args) if context.args else "Moscow"
-    result = get_weather(city)
-    update.message.reply_text(emoji.emojize(result), parse_mode=ParseMode.MARKDOWN)
-
-# Команда /joke
-def joke(update: Update, context: CallbackContext):
-    user_id = str(update.effective_user.id)
-    if not check_rate_limit(user_id):
-        update.message.reply_text(emoji.emojize("Слишком много сообщений! Подожди минутку. :hourglass:"), parse_mode=ParseMode.MARKDOWN)
-        return
+    # Погода
+    if re.search(r"\b(погода|температура|градус|прогноз)\b", text_lower):
+        # Извлечение города
+        tokens = nltk.word_tokenize(text_lower)
+        cities = [t.capitalize() for t in tokens if t.isalpha() and t not in ["погода", "температура", "какая", "в"]]
+        city = cities[0] if cities else "Moscow"
+        return "weather", city
     
-    joke_text = get_joke()
-    update.message.reply_text(emoji.emojize(f"Шутка: {joke_text} :laughing:"), parse_mode=ParseMode.MARKDOWN)
-
-# Команда /fact
-def fact(update: Update, context: CallbackContext):
-    user_id = str(update.effective_user.id)
-    if not check_rate_limit(user_id):
-        update.message.reply_text(emoji.emojize("Слишком много сообщений! Подожди минутку. :hourglass:"), parse_mode=ParseMode.MARKDOWN)
-        return
+    # Шутка
+    if re.search(r"\b(шутка|посмеяться|анекдот|смешно)\b", text_lower):
+        return "joke", None
     
-    fact_text = get_fact()
-    update.message.reply_text(emoji.emojize(f"Факт: {fact_text} :bulb:"), parse_mode=ParseMode.MARKDOWN)
-
-# Команда /history
-def history(update: Update, context: CallbackContext):
-    user_id = str(update.effective_user.id)
-    data = load_data()
+    # Факт
+    if re.search(r"\b(факт|интересно|знал)\b", text_lower):
+        return "fact", None
     
-    if user_id not in data["users"] or not data["users"][user_id]:
-        update.message.reply_text(emoji.emojize("История пуста! Задай мне вопрос. :open_book:"), parse_mode=ParseMode.MARKDOWN)
-        return
+    # История
+    if re.search(r"\b(история|прошлые|вопросы)\b", text_lower):
+        return "history", None
     
-    response = emoji.emojize("*Твоя история вопросов:*\n:history:")
-    for entry in data["users"][user_id][-5:]:
-        timestamp = entry.get("timestamp", "Неизвестно")
-        question = entry["question"]
-        answer = entry["answer"]
-        response += f"_{timestamp}_\n*Вопрос:* {question}\n*Ответ:* {answer}\n\n"
+    # Очистка истории
+    if re.search(r"\b(очистить|удалить|историю)\b", text_lower):
+        return "clear", None
     
-    update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
-
-# Команда /clear
-def clear(update: Update, context: CallbackContext):
-    user_id = str(update.effective_user.id)
-    data = load_data()
+    # Вопрос (поиск)
+    if re.search(r"\b(что|кто|где|когда|почему|как|зачем)\b", text_lower):
+        return "search", text_lower
     
-    if user_id in data["users"]:
-        data["users"][user_id] = []
-        save_data(data)
-        update.message.reply_text(emoji.emojize("История очищена! :broom:"), parse_mode=ParseMode.MARKDOWN)
-    else:
-        update.message.reply_text(emoji.emojize("У тебя пока нет истории. :open_book:"), parse_mode=ParseMode.MARKDOWN)
+    # Общий поиск
+    return "search", text_lower
 
 # Обработка сообщений
 def handle_message(update: Update, context: CallbackContext):
@@ -258,50 +228,107 @@ def handle_message(update: Update, context: CallbackContext):
     if user_id not in data["users"]:
         data["users"][user_id] = []
     
+    # Приветствие для новых пользователей
+    if not data["users"][user_id] and "привет" in user_message.lower():
+        update.message.reply_text(
+            emoji.emojize(
+                f"Привет! Я умный бот! :robot:\n"
+                "Спрашивай о погоде, фактах, шути, ищи информацию — я всё умею!\n"
+                "Например: 'Какая погода в Москве?', 'Расскажи шутку', 'Что такое Python?'"
+            ),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
     # Проверка истории
     for entry in data["users"][user_id]:
         if entry["question"].lower() == user_message.lower():
             update.message.reply_text(emoji.emojize(f"Я уже отвечал: {entry['answer']} :repeat:"), parse_mode=ParseMode.MARKDOWN)
             return
     
-    # Перевод, если текст не на русском
+    # Перевод
     translated_message = translate_text(user_message, to_lang="ru")
     if translated_message != user_message:
         logger.info(f"Переведено: {user_message} -> {translated_message}")
     
-    # Извлечение ключевых слов
+    # Ключевые слова
     keywords = extract_keywords(translated_message)
     query = " ".join(keywords) if keywords else translated_message
     
     # Анализ настроения
     sentiment, score = analyze_sentiment(user_message)
-    sentiment_response = f"Настроение твоего вопроса: {sentiment} (оценка: {score:.2f})"
+    sentiment_response = f"Настроение твоего запроса: {sentiment} (оценка: {score:.2f})"
     
-    # Поиск ответа
+    # Классификация намерения
+    intent, param = classify_intent(translated_message)
+    
+    # Обработка намерения
     answer = None
     source = None
     
-    # 1. Википедия
-    answer = search_wikipedia(query)
-    if answer:
-        source = "Википедия"
-        logger.info("Ответ найден в Википедии")
+    if intent == "weather":
+        answer = get_weather(param)
+        source = "Погода"
+        logger.info(f"Запрос погоды: {param}")
     
-    # 2. Веб-поиск
-    if not answer:
-        answer = search_web(query)
-        if answer:
-            source = "Интернет"
-            logger.info("Ответ найден в интернете")
+    elif intent == "joke":
+        answer = get_joke()
+        source = "Шутка"
+        logger.info("Запрос шутки")
     
-    # 3. Факт или шутка
-    if not answer:
-        if random.random() < 0.5:
-            answer = get_fact()
-            source = "Факт"
+    elif intent == "fact":
+        answer = get_fact()
+        source = "Факт"
+        logger.info("Запрос факта")
+    
+    elif intent == "history":
+        if user_id not in data["users"] or not data["users"][user_id]:
+            answer = "История пуста! Задай мне вопрос."
+            source = "История"
         else:
-            answer = get_joke()
-            source = "Шутка"
+            response = emoji.emojize("*Твоя история вопросов:*\n:history:")
+            for entry in data["users"][user_id][-5:]:
+                timestamp = entry.get("timestamp", "Неизвестно")
+                question = entry["question"]
+                ans = entry["answer"]
+                response += f"_{timestamp}_\n*Вопрос:* {question}\n*Ответ:* {ans}\n\n"
+            answer = response
+            source = "История"
+        logger.info("Запрос истории")
+    
+    elif intent == "clear":
+        if user_id in data["users"]:
+            data["users"][user_id] = []
+            save_data(data)
+            answer = "История очищена!"
+            source = "Очистка"
+        else:
+            answer = "У тебя пока нет истории."
+            source = "Очистка"
+        logger.info("Запрос очистки истории")
+    
+    elif intent == "search":
+        # Википедия
+        answer = search_wikipedia(query)
+        if answer:
+            source = "Википедия"
+            logger.info("Ответ найден в Википедии")
+        
+        # Веб-поиск
+        if not answer:
+            answer = search_web(query)
+            if answer:
+                source = "Интернет"
+                logger.info("Ответ найден в интернете")
+        
+        # Факт или шутка
+        if not answer:
+            if random.random() < 0.5:
+                answer = get_fact()
+                source = "Факт"
+            else:
+                answer = get_joke()
+                source = "Шутка"
     
     # Форматирование ответа
     final_answer = f"{sentiment_response}\n*{source}:* {answer}"
@@ -331,12 +358,6 @@ def main():
         updater = Updater(TOKEN, use_context=True)
         dp = updater.dispatcher
         
-        dp.add_handler(CommandHandler("start", start))
-        dp.add_handler(CommandHandler("weather", weather))
-        dp.add_handler(CommandHandler("joke", joke))
-        dp.add_handler(CommandHandler("fact", fact))
-        dp.add_handler(CommandHandler("history", history))
-        dp.add_handler(CommandHandler("clear", clear))
         dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
         dp.add_error_handler(error_handler)
         
