@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
 if not TOKEN:
     logger.error("Токен не задан! Установите TELEGRAM_TOKEN в переменных окружения.")
-    raise ValueError("Токен не установлен. Пожалуйста, задайте TELEGRAM_TOKEN.")
 
 # Ключ для OpenWeatherMap
 OWM_API_KEY = "your_openweathermap_key_here"  # Замените на ваш ключ с openweathermap.org
