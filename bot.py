@@ -11,7 +11,6 @@ from textblob import TextBlob
 from pyowm import OWM
 import wikipediaapi
 import pyjokes
-from randomfacts import RandomFacts
 import emoji
 import nltk
 import logging
