@@ -42,7 +42,7 @@ FALLBACK_RESPONSES = [
 ]
 
 # Настройка Википедии
-wiki = wikipediaapi.Wikipedia("ru")
+wiki = wikipediaapi.Wikipedia("ua")
 
 # Настройка RandomFacts
 facts = RandomFacts()
