@@ -164,7 +164,6 @@ def get_fact():
         logger.error(f"Ошибка факта: {e}")
         return "Интересный факт: Земля круглая! 🌍"
 
-# Извлечение ключевых слов
 def extract_keywords(text):
     try:
         tokens = nltk.word_tokenize(text.lower())
