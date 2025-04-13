@@ -21,7 +21,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Загрузка токена
-TOKEN = os.getenv("TELEGRAM_TOKEN")
+TOKEN = os.getenv("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
 if not TOKEN:
     TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"  # Временный токен
     logger.warning("TELEGRAM_TOKEN не найден в переменных окружения. Используется токен из кода (небезопасно).")
