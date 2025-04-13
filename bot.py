@@ -32,10 +32,7 @@ FALLBACK_RESPONSES = [
 ]
 
 # Настройка Википедии
-wikipedia.set_lang("ru")
-
-# Настройка переводчика
-translator = Translator()
+wikipedia.set_lang("ua")
 
 # Загрузка данных
 def load_data():
