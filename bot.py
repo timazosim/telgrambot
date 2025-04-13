@@ -48,7 +48,7 @@ FALLBACK_RESPONSES = [
 ]
 
 # Настройка Википедии
-wiki = wikipediaapi.Wikipedia("ru")
+wiki = wikipediaapi.Wikipedia("ua")
 
 # Настройка NLTK
 nltk.download('punkt', quiet=True)
