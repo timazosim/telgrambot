@@ -7,6 +7,7 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Callb
 import requests
 import wikipedia
 import pyjokes
+from googletrans import Translator
 from googlesearch import search
 import logging
 import random
@@ -16,7 +17,15 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Загрузка токена
-TOKEN = os.getenv("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+if not TOKEN:
+    TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"  # Замените на ваш токен
+    logger.warning("TELEGRAM_TOKEN не найден в переменных окружения. Используется токен из кода (небезопасно).")
+
+# Проверка токена
+if not TOKEN:
+    logger.error("Токен не задан! Установите TELEGRAM_TOKEN в переменных окружения или укажите в коде.")
+    raise ValueError("Токен не установлен. Пожалуйста, задайте TELEGRAM_TOKEN.")
 
 # Конфигурация
 DATA_FILE = "bot_data.json"
@@ -32,7 +41,10 @@ FALLBACK_RESPONSES = [
 ]
 
 # Настройка Википедии
-wikipedia.set_lang("ua")
+wikipedia.set_lang("ru")
+
+# Настройка переводчика
+translator = Translator()
 
 # Загрузка данных
 def load_data():
