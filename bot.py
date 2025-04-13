@@ -7,7 +7,6 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Callb
 import requests
 import wikipedia
 import pyjokes
-from googletrans import Translator
 from googlesearch import search
 import logging
 import random
@@ -25,9 +24,6 @@ if not TOKEN:
 if not TOKEN:
     logger.error("Токен не задан! Установите TELEGRAM_TOKEN в переменных окружения или укажите в коде.")
     raise ValueError("Токен не установлен")
-
-# API-ключ для NewsAPI (замените на ваш)
-NEWSAPI_KEY = "your_newsapi_key_here"  # Получите на newsapi.org
 
 # Конфигурация
 DATA_FILE = "bot_data.json"
