@@ -17,13 +17,6 @@ logger = logging.getLogger(__name__)
 
 # Загрузка токена
 TOKEN = os.getenv("7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574")
-if not TOKEN:
-    TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"  # Замените на ваш токен
-    logger.warning("TELEGRAM_TOKEN не найден в переменных окружения. Используется токен из кода (небезопасно).")
-
-if not TOKEN:
-    logger.error("Токен не задан! Установите TELEGRAM_TOKEN в переменных окружения или укажите в коде.")
-    raise ValueError("Токен не установлен")
 
 # Конфигурация
 DATA_FILE = "bot_data.json"
