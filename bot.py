@@ -1,14 +1,14 @@
 import os
 import json
 import time
-from googlesearch import search
 from datetime import datetime
 from telegram import Update, ParseMode
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 import requests
 import wikipedia
 import pyjokes
-from translate import Translator
+from googletrans import Translator
+from googlesearch import search
 import logging
 import random
 
@@ -26,13 +26,8 @@ if not TOKEN:
     logger.error("Токен не задан! Установите TELEGRAM_TOKEN в переменных окружения или укажите в коде.")
     raise ValueError("Токен не установлен")
 
-# API-ключи (замените на ваши)
-SERPAPI_KEY = "your_serpapi_key_here"  # Получите на serpapi.com
+# API-ключ для NewsAPI (замените на ваш)
 NEWSAPI_KEY = "your_newsapi_key_here"  # Получите на newsapi.org
-
-# Проверка API-ключей
-if SERPAPI_KEY == "your_serpapi_key_here" or NEWSAPI_KEY == "your_newsapi_key_here":
-    logger.warning("API-ключи для SerpAPI или NewsAPI не заданы. Некоторые функции поиска будут ограничены.")
 
 # Конфигурация
 DATA_FILE = "bot_data.json"
@@ -41,7 +36,7 @@ user_timestamps = {}
 
 # Предустановленные ответы
 FALLBACK_RESPONSES = [
-    "Хм, интересный вопрос! Не нашёл точного ответа, но давай попробуем что-то ещё? 😊",
+    "Хм, интересный вопрос! Не нашёл ответа, давай попробуем переформулировать? 😊",
     "Кажется, интернет молчит! Уточни детали или спроси про шутку!",
     "Ого, ты меня озадачил! Может, я найду новости по этой теме?",
     "Упс, мои источники иссякли! 😄 Хочешь шутку вместо ответа?",
@@ -51,7 +46,7 @@ FALLBACK_RESPONSES = [
 wikipedia.set_lang("ru")
 
 # Настройка переводчика
-translator = Translator(to_lang="ru")
+translator = Translator()
 
 # Загрузка данных
 def load_data():
@@ -84,21 +79,14 @@ def check_rate_limit(user_id):
     user_timestamps[user_id].append(now)
     return True
 
-# Поиск через SerpAPI (Google Search)
-def search_serpapi(query):
-    if SERPAPI_KEY == "your_serpapi_key_here":
-        return None
+# Поиск через Google Search
+def search_google(query):
     try:
-        url = "https://serpapi.com/search"
-        params = {"q": query, "api_key": SERPAPI_KEY, "hl": "ru", "num": 1}
-        response = requests.get(url, params=params, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("organic_results"):
-            return data["organic_results"][0].get("snippet", None)
+        for result in search(query, num_results=1, lang="ru", pause=2.0):
+            return result
         return None
     except Exception as e:
-        logger.error(f"Ошибка SerpAPI: {e}")
+        logger.error(f"Ошибка Google Search: {e}")
         return None
 
 # Поиск новостей через NewsAPI
@@ -134,7 +122,8 @@ def search_wikipedia(query):
 # Перевод текста
 def translate_text(text, to_lang="ru"):
     try:
-        return translator.translate(text)
+        translated = translator.translate(text, dest=to_lang)
+        return translated.text
     except Exception as e:
         logger.error(f"Ошибка перевода: {e}")
         return text
@@ -143,7 +132,7 @@ def translate_text(text, to_lang="ru"):
 def get_joke():
     try:
         joke = pyjokes.get_joke(language="en", category="neutral")
-        return translate_text(joke, to_lang="ru")  # Переводим шутку на русский
+        return translate_text(joke, to_lang="ru")
     except Exception as e:
         logger.error(f"Ошибка шутки: {e}")
         return "Не могу найти шутку, но вот улыбка: 😄"
@@ -215,7 +204,7 @@ def handle_message(update: Update, context: CallbackContext):
             update.message.reply_text(f"Я уже отвечал: {entry['answer']}", parse_mode=ParseMode.MARKDOWN)
             return
     
-    # Перевод вопроса, если не на русском
+    # Перевод вопроса
     translated_message = translate_text(user_message, to_lang="ru")
     if translated_message != user_message:
         logger.info(f"Переведено: {user_message} -> {translated_message}")
@@ -224,20 +213,20 @@ def handle_message(update: Update, context: CallbackContext):
     answer = None
     source = None
     
-    # 1. SerpAPI (Google Search)
-    answer = search_serpapi(translated_message)
+    # 1. Google Search
+    answer = search_google(translated_message)
     if answer:
         source = "Google"
-        logger.info("Ответ найден через SerpAPI")
+        logger.info("Ответ найден через Google Search")
     
-    # 2. NewsAPI, если Google не дал результата
+    # 2. NewsAPI
     if not answer:
         answer = search_newsapi(translated_message)
         if answer:
             source = "Новости"
             logger.info("Ответ найден через NewsAPI")
     
-    # 3. Википедия, если новости не помогли
+    # 3. Википедия
     if not answer:
         answer = search_wikipedia(translated_message)
         if answer:
@@ -253,7 +242,7 @@ def handle_message(update: Update, context: CallbackContext):
             answer = get_fallback_response()
             source = "Предустановленный ответ"
     
-    # Форматирование ответа с указанием источника
+    # Форматирование ответа
     final_answer = f"*{source}:* {answer}"
     
     # Сохранение в историю
