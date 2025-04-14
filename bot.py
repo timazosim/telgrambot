@@ -14,10 +14,17 @@ import asyncio
 # Telegram Bot Token (замените на ваш токен от BotFather)
 TELEGRAM_TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
 
+# Hugging Face Token (замените на ваш токен от Hugging Face)
+HF_TOKEN = "YOUR_HUGGINGFACE_TOKEN_HERE"
+
 # Загружаем модель и токенизатор
 model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"  # Можно заменить на "distilgpt2" для легкой модели
-tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
+try:
+    tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=HF_TOKEN, use_fast=True)
+    model = AutoModelForCausalLM.from_pretrained(model_name, use_auth_token=HF_TOKEN, torch_dtype=torch.float16, device_map="auto")
+except Exception as e:
+    print(f"Ошибка загрузки модели: {e}")
+    exit(1)
 
 # Словарь для хранения истории чата по chat_id
 chat_histories = {}
