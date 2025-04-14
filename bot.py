@@ -15,7 +15,7 @@ import asyncio
 TELEGRAM_TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
 
 # Hugging Face Token (замените на ваш токен от Hugging Face)
-HF_TOKEN = "YOUR_HUGGINGFACE_TOKEN_HERE"
+HF_TOKEN = "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"
 
 # Загружаем модель и токенизатор
 model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"  # Можно заменить на "distilgpt2" для легкой модели
