@@ -15,13 +15,13 @@ import asyncio
 TELEGRAM_TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
 
 # Hugging Face Token (замените на ваш токен от Hugging Face)
-HF_TOKEN = "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"
+HF_TOKEN = "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"
 
 # Загружаем модель и токенизатор
-model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"  # Можно заменить на "distilgpt2" для легкой модели
+model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"  # Можно заменить на "distilgpt2"
 try:
-    tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token=HF_TOKEN, use_fast=True)
-    model = AutoModelForCausalLM.from_pretrained(model_name, use_auth_token=HF_TOKEN, torch_dtype=torch.float16, device_map="auto")
+    tokenizer = AutoTokenizer.from_pretrained(model_name, token=HF_TOKEN, use_fast=True)
+    model = AutoModelForCausalLM.from_pretrained(model_name, token=HF_TOKEN, torch_dtype=torch.float16, device_map="auto")
 except Exception as e:
     print(f"Ошибка загрузки модели: {e}")
     exit(1)
@@ -114,17 +114,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Запускает бота."""
-    # Создаем приложение
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    try:
+        # Создаем приложение
+        application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # Регистрируем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("clear", clear))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        # Регистрируем обработчики
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("clear", clear))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запускаем бота
-    print("Бот запущен...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Запускаем бота
+        print("Бот запущен...")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as e:
+        print(f"Ошибка запуска бота: {e}")
 
 if __name__ == "__main__":
     main()
