@@ -1,5 +1,5 @@
-import torch
 import re
+import logging
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -8,8 +8,6 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
-import asyncio
-import logging
 
 # Настройка логирования
 logging.basicConfig(
@@ -24,6 +22,16 @@ TELEGRAM_TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
 # Словарь для хранения истории чата по chat_id
 chat_histories = {}
 
+# Простая база знаний для ответов
+KNOWLEDGE_BASE = {
+    r"(?i)что такое (.*)": lambda match: f"{match.group(1).capitalize()} — это общее понятие. Например, если вы спросили про 'Python', это язык программирования.",
+    r"(?i)как (.*)": lambda match: f"Чтобы {match.group(1).lower()}, нужно уточнить детали. Например, 'как программировать' — начните с изучения основ языка.",
+    r"(?i)почему (.*)": lambda match: f"Причина, почему {match.group(1).lower()}, может зависеть от контекста. Уточните, и я помогу!",
+    r"(?i)кто (.*)": lambda match: f"Кто {match.group(1).lower()}? Это может быть человек, персонаж или что-то другое. Дайте больше информации.",
+    r"(?i)где (.*)": lambda match: f"Где {match.group(1).lower()}? Это может быть место или абстрактное понятие. Уточните, пожалуйста.",
+    r"(?i)когда (.*)": lambda match: f"Когда {match.group(1).lower()}? Это зависит от события. Расскажите больше.",
+}
+
 def format_input(user_input, is_question=False):
     """Форматирует ввод пользователя."""
     if is_question:
@@ -37,7 +45,7 @@ def clean_response(response):
     return response.strip()
 
 async def get_response(user_input, chat_id, max_history_len=5):
-    """Генерирует ответ на основе ввода и истории."""
+    """Генерирует ответ на основе ввода и правил."""
     if not user_input.strip():
         return "Пожалуйста, отправьте сообщение."
 
@@ -55,10 +63,18 @@ async def get_response(user_input, chat_id, max_history_len=5):
     if len(history) > max_history_len:
         history = history[-max_history_len:]
 
-    # Формируем ответ (заглушка вместо модели)
     try:
-        # Здесь должна быть логика генерации ответа, но без Hugging Face используем эхо
-        response = f"Эхо: {user_input}"  # Замените на вызов другой модели или API, если нужно
+        # Проверяем ввод на соответствие шаблонам в базе знаний
+        response = None
+        for pattern, response_func in KNOWLEDGE_BASE.items():
+            match = re.match(pattern, user_input)
+            if match:
+                response = response_func(match)
+                break
+
+        # Если не найдено совпадение, даём общий ответ
+        if not response:
+            response = "Интересный вопрос! Уточните детали, и я постараюсь ответить точнее."
 
         # Обновляем историю
         history.append(f"[Пользователь] {user_input} [Бот] {response}")
