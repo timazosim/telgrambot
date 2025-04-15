@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Telegram Bot Token (замените на ваш токен от BotFather)
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_TOKEN_HERE"
+TELEGRAM_TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
 
 # Словарь для хранения истории чата по chat_id
 chat_histories = {}
