@@ -1,5 +1,8 @@
 import re
 import logging
+import os
+import sys
+import atexit
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -31,6 +34,21 @@ KNOWLEDGE_BASE = {
     r"(?i)где (.*)": lambda match: f"Где {match.group(1).lower()}? Это может быть место или абстрактное понятие. Уточните, пожалуйста.",
     r"(?i)когда (.*)": lambda match: f"Когда {match.group(1).lower()}? Это зависит от события. Расскажите больше.",
 }
+
+# Проверка на дублирующийся запуск
+LOCK_FILE = "bot.lock"
+
+def create_lock():
+    if os.path.exists(LOCK_FILE):
+        logger.error("Another instance of the bot is already running.")
+        sys.exit(1)
+    with open(LOCK_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    atexit.register(remove_lock)
+
+def remove_lock():
+    if os.path.exists(LOCK_FILE):
+        os.remove(LOCK_FILE)
 
 def format_input(user_input, is_question=False):
     """Форматирует ввод пользователя."""
@@ -111,6 +129,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Запускает бота."""
+    create_lock()
     try:
         logger.info("Инициализация бота...")
         # Создаем приложение
