@@ -1,5 +1,4 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import re
 from telegram import Update
 from telegram.ext import (
@@ -10,33 +9,29 @@ from telegram.ext import (
     ContextTypes,
 )
 import asyncio
+import logging
+
+# Настройка логирования
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Telegram Bot Token (замените на ваш токен от BotFather)
-TELEGRAM_TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
-
-# Hugging Face Token (замените на ваш токен от Hugging Face)
-HF_TOKEN = "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"
-
-# Загружаем модель и токенизатор
-model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"  # Можно заменить на "distilgpt2"
-try:
-    tokenizer = AutoTokenizer.from_pretrained(model_name, token=HF_TOKEN, use_fast=True)
-    model = AutoModelForCausalLM.from_pretrained(model_name, token=HF_TOKEN, torch_dtype=torch.float16, device_map="auto")
-except Exception as e:
-    print(f"Ошибка загрузки модели: {e}")
-    exit(1)
+TELEGRAM_TOKEN = "YOUR_TELEGRAM_TOKEN_HERE"
 
 # Словарь для хранения истории чата по chat_id
 chat_histories = {}
 
 def format_input(user_input, is_question=False):
-    """Форматирует ввод пользователя для модели."""
+    """Форматирует ввод пользователя."""
     if is_question:
         return f"[Вопрос] {user_input} [Ответ]"
     return f"[Пользователь] {user_input} [Бот]"
 
 def clean_response(response):
-    """Очищает ответ от лишних символов и артефактов."""
+    """Очищает ответ от лишних символов."""
     response = re.sub(r"\[Бот\].*?$", "", response, flags=re.DOTALL)
     response = re.sub(r"\[.*?\]", "", response)
     return response.strip()
@@ -46,6 +41,7 @@ async def get_response(user_input, chat_id, max_history_len=5):
     if not user_input.strip():
         return "Пожалуйста, отправьте сообщение."
 
+    logger.info(f"Обработка ввода: {user_input}")
     # Определяем, является ли ввод вопросом
     is_question = "?" in user_input or user_input.lower().startswith(("что", "как", "почему", "кто", "где", "когда"))
 
@@ -59,41 +55,25 @@ async def get_response(user_input, chat_id, max_history_len=5):
     if len(history) > max_history_len:
         history = history[-max_history_len:]
 
-    # Формируем полный контекст
-    context = "\n".join(history + [formatted_input])
-
-    # Кодируем контекст
-    input_ids = tokenizer.encode(context, return_tensors="pt").to(model.device)
-
+    # Формируем ответ (заглушка вместо модели)
     try:
-        # Генерируем ответ
-        output_ids = model.generate(
-            input_ids,
-            max_new_tokens=200,
-            pad_token_id=tokenizer.eos_token_id,
-            no_repeat_ngram_size=3,
-            do_sample=True,
-            top_k=50,
-            top_p=0.9,
-            temperature=0.7,
-            early_stopping=True
-        )
-
-        # Декодируем только новый текст
-        generated_text = tokenizer.decode(output_ids[0, input_ids.shape[-1]:], skip_special_tokens=True)
-        response = clean_response(generated_text)
+        # Здесь должна быть логика генерации ответа, но без Hugging Face используем эхо
+        response = f"Эхо: {user_input}"  # Замените на вызов другой модели или API, если нужно
 
         # Обновляем историю
         history.append(f"[Пользователь] {user_input} [Бот] {response}")
         chat_histories[chat_id] = history
 
+        logger.info(f"Сгенерирован ответ: {response}")
         return response
 
     except Exception as e:
+        logger.error(f"Ошибка при генерации ответа: {e}")
         return f"Ошибка при генерации ответа: {str(e)}"
 
 # Обработчик команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("Получена команда /start")
     await update.message.reply_text(
         "Привет! Я чат-бот, готов ответить на твои вопросы или поболтать. "
         "Используй /clear, чтобы очистить историю чата."
@@ -103,6 +83,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     chat_histories[chat_id] = []
+    logger.info(f"История очищена для chat_id: {chat_id}")
     await update.message.reply_text("История чата очищена!")
 
 # Обработчик текстовых сообщений
@@ -115,6 +96,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     """Запускает бота."""
     try:
+        logger.info("Инициализация бота...")
         # Создаем приложение
         application = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -124,10 +106,10 @@ def main():
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
         # Запускаем бота
-        print("Бот запущен...")
+        logger.info("Бот запущен, начало polling...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
     except Exception as e:
-        print(f"Ошибка запуска бота: {e}")
+        logger.error(f"Ошибка запуска бота: {e}")
 
 if __name__ == "__main__":
     main()
