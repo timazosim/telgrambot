@@ -2,6 +2,7 @@ import logging
 import aiosqlite
 import asyncio
 import time
+from huggingface_hub import login
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 from telegram import Update
@@ -11,6 +12,8 @@ start = time.time()
 # ... якийсь важкий блок, наприклад, генерація
 end = time.time()
 print(f"GPT-відповідь зайняла {end - start:.2f} секунд")
+
+login("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")
 
 # === GPT-модель ===
 MODEL_NAME = "blinoff/ukrainian-gpt2"
