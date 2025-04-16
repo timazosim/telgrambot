@@ -1,1 +1,1 @@
-python -c "import os; print(os.getenv('7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574'))"
+pip install -r requirements.txt
