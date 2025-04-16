@@ -1,10 +1,16 @@
 import logging
 import aiosqlite
 import asyncio
+import time
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+
+start = time.time()
+# ... якийсь важкий блок, наприклад, генерація
+end = time.time()
+print(f"GPT-відповідь зайняла {end - start:.2f} секунд")
 
 # === GPT-модель ===
 MODEL_NAME = "blinoff/ukrainian-gpt2"
