@@ -1,150 +1,126 @@
-import re
 import logging
-import os
-import sys
-import atexit
+import aiosqlite
+import asyncio
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
 from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+
+# === GPT-модель ===
+MODEL_NAME = "blinoff/ukrainian-gpt2"
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+
+# === Персональність бота ===
+BOT_PERSONALITY = (
+    "Ти — дружній, уважний і трохи жартівливий україномовний бот. "
+    "Ти пам’ятаєш факти про співрозмовника й намагаєшся будувати діалог природно.\n"
 )
 
-# Настройка логирования
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+MAX_CONTEXT_TOKENS = 400
+DB_FILE = "bot_memory.db"
 
-# Telegram Bot Token (замените на ваш токен от BotFather)
-TELEGRAM_TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"
+# === Ініціалізація бази даних ===
+async def init_db():
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_data (
+                user_id TEXT PRIMARY KEY,
+                context TEXT,
+                memory TEXT
+            )
+        """)
+        await db.commit()
 
-# Словарь для хранения истории чата по chat_id
-chat_histories = {}
+# === Завантаження даних користувача з БД ===
+async def load_user_data(user_id):
+    async with aiosqlite.connect(DB_FILE) as db:
+        async with db.execute("SELECT context, memory FROM user_data WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                context = row[0].split("||") if row[0] else []
+                memory = row[1].split("||") if row[1] else []
+                return context, memory
+            else:
+                return [], []
 
-# Простая база знаний для ответов
-KNOWLEDGE_BASE = {
-    r"(?i)что такое (.*)": lambda match: f"{match.group(1).capitalize()} — это общее понятие. Например, если вы спросили про 'Python', это язык программирования.",
-    r"(?i)как (.*)": lambda match: f"Чтобы {match.group(1).lower()}, нужно уточнить детали. Например, 'как программировать' — начните с изучения основ языка.",
-    r"(?i)почему (.*)": lambda match: f"Причина, почему {match.group(1).lower()}, может зависеть от контекста. Уточните, и я помогу!",
-    r"(?i)кто (.*)": lambda match: f"Кто {match.group(1).lower()}? Это может быть человек, персонаж или что-то другое. Дайте больше информации.",
-    r"(?i)где (.*)": lambda match: f"Где {match.group(1).lower()}? Это может быть место или абстрактное понятие. Уточните, пожалуйста.",
-    r"(?i)когда (.*)": lambda match: f"Когда {match.group(1).lower()}? Это зависит от события. Расскажите больше.",
-}
+# === Збереження даних користувача в БД ===
+async def save_user_data(user_id, context, memory):
+    context_str = "||".join(context)
+    memory_str = "||".join(memory)
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.execute("""
+            INSERT INTO user_data (user_id, context, memory)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+            context=excluded.context,
+            memory=excluded.memory
+        """, (user_id, context_str, memory_str))
+        await db.commit()
 
-# Проверка на дублирующийся запуск
-LOCK_FILE = "bot.lock"
+# === Оновлення пам’яті ===
+def update_memory(memory, user_input):
+    if "мене звати" in user_input.lower():
+        name = user_input.split("мене звати")[-1].strip().split()[0]
+        memory.append(f"Ім’я користувача — {name}.")
+    elif "я люблю" in user_input.lower():
+        hobby = user_input.split("я люблю")[-1].strip().split(".")[0]
+        memory.append(f"Користувач любить {hobby}.")
+    elif "я з" in user_input.lower():
+        city = user_input.split("я з")[-1].strip().split()[0]
+        memory.append(f"Користувач з міста {city}.")
+    return list(set(memory))[-5:]
 
-def create_lock():
-    if os.path.exists(LOCK_FILE):
-        logger.error("Another instance of the bot is already running.")
-        sys.exit(1)
-    with open(LOCK_FILE, "w") as f:
-        f.write(str(os.getpid()))
-    atexit.register(remove_lock)
+# === Головна логіка чату ===
+async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    user_input = update.message.text.strip()
 
-def remove_lock():
-    if os.path.exists(LOCK_FILE):
-        os.remove(LOCK_FILE)
+    # Завантаження даних користувача
+    context_lines, memory_facts = await load_user_data(user_id)
 
-def format_input(user_input, is_question=False):
-    """Форматирует ввод пользователя."""
-    if is_question:
-        return f"[Вопрос] {user_input} [Ответ]"
-    return f"[Пользователь] {user_input} [Бот]"
+    # Оновлення пам’яті
+    memory_facts = update_memory(memory_facts, user_input)
 
-def clean_response(response):
-    """Очищает ответ от лишних символов."""
-    response = re.sub(r"\[Бот\].*?$", "", response, flags=re.DOTALL)
-    response = re.sub(r"\[.*?\]", "", response)
-    return response.strip()
+    # Формування промпту
+    prompt = BOT_PERSONALITY
+    if memory_facts:
+        prompt += "Факти про користувача:\n" + "\n".join(memory_facts) + "\n\n"
+    prompt += "Діалог:\n" + "\n".join(context_lines[-10:]) + f"\nКористувач: {user_input}\nБот:"
 
-async def get_response(user_input, chat_id, max_history_len=5):
-    """Генерирует ответ на основе ввода и правил."""
-    if not user_input.strip():
-        return "Пожалуйста, отправьте сообщение."
-
-    logger.info(f"Обработка ввода: {user_input}")
-    # Определяем, является ли ввод вопросом
-    is_question = "?" in user_input or user_input.lower().startswith(("что", "как", "почему", "кто", "где", "когда"))
-
-    # Форматируем текущий ввод
-    formatted_input = format_input(user_input, is_question)
-
-    # Получаем историю чата для данного chat_id
-    history = chat_histories.get(chat_id, [])
-
-    # Обрезаем историю, чтобы не превысить лимит
-    if len(history) > max_history_len:
-        history = history[-max_history_len:]
-
-    try:
-        # Проверяем ввод на соответствие шаблонам в базе знаний
-        response = None
-        for pattern, response_func in KNOWLEDGE_BASE.items():
-            match = re.match(pattern, user_input)
-            if match:
-                response = response_func(match)
-                break
-
-        # Если не найдено совпадение, даём общий ответ
-        if not response:
-            response = "Интересный вопрос! Уточните детали, и я постараюсь ответить точнее."
-
-        # Обновляем историю
-        history.append(f"[Пользователь] {user_input} [Бот] {response}")
-        chat_histories[chat_id] = history
-
-        logger.info(f"Сгенерирован ответ: {response}")
-        return response
-
-    except Exception as e:
-        logger.error(f"Ошибка при генерации ответа: {e}")
-        return f"Ошибка при генерации ответа: {str(e)}"
-
-# Обработчик команды /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info("Получена команда /start")
-    await update.message.reply_text(
-        "Привет! Я чат-бот, готов ответить на твои вопросы или поболтать. "
-        "Используй /clear, чтобы очистить историю чата."
+    # Генерація відповіді
+    input_ids = tokenizer.encode(prompt, return_tensors="pt", truncation=True, max_length=MAX_CONTEXT_TOKENS)
+    output_ids = model.generate(
+        input_ids,
+        max_length=MAX_CONTEXT_TOKENS + 80,
+        pad_token_id=tokenizer.eos_token_id,
+        do_sample=True,
+        top_k=50,
+        top_p=0.95,
+        temperature=0.9,
+        no_repeat_ngram_size=2
     )
+    full_output = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+    reply = full_output[len(prompt):].strip().split("\n")[0]
 
-# Обработчик команды /clear
-async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    chat_histories[chat_id] = []
-    logger.info(f"История очищена для chat_id: {chat_id}")
-    await update.message.reply_text("История чата очищена!")
+    # Оновлення контексту
+    context_lines.append(f"Користувач: {user_input}")
+    context_lines.append(f"Бот: {reply}")
+    context_lines = context_lines[-20:]
 
-# Обработчик текстовых сообщений
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    user_input = update.message.text
-    response = await get_response(user_input, chat_id)
-    await update.message.reply_text(response)
+    # Збереження
+    await save_user_data(user_id, context_lines, memory_facts)
 
-def main():
-    """Запускает бота."""
-    create_lock()
-    try:
-        logger.info("Инициализация бота...")
-        # Создаем приложение
-        application = Application.builder().token(TELEGRAM_TOKEN).build()
+    # Відповідь користувачу
+    await update.message.reply_text(reply)
 
-        # Регистрируем обработчики
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("clear", clear))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-        # Запускаем бота
-        logger.info("Бот запущен, начало polling...")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
-    except Exception as e:
-        logger.error(f"Ошибка запуска бота: {e}")
-
+# === Запуск бота ===
 if __name__ == "__main__":
-    main()
+    asyncio.run(init_db())
+    TELEGRAM_TOKEN = "7756341764:AAH65M7ZKAU2mWk-OFerfu5own6QMgkM574"  # Встав свій токен
+
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
+
+    print("Бот з базою даних запущено!")
+    app.run_polling()
